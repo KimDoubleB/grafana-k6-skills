@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "grafana-k6-skills",
+  "description": "Grafana k6 load testing skills - test script generation, scenario design, results analysis, CI/CD integration, and chaos engineering.",
+  "owner": {
+    "name": "KimDoubleB",
+    "email": "tree9295@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "k6",
+      "source": "./plugins/grafana-k6-skills",
+      "description": "Grafana k6 load testing skills for generating test scripts, designing scenarios, analyzing results, and operating k6 infrastructure.",
+      "version": "0.0.1",
+      "category": "testing",
+      "homepage": "https://github.com/KimDoubleB/grafana-k6-skills",
+      "repository": "https://github.com/KimDoubleB/grafana-k6-skills",
+      "license": "MIT",
+      "tags": ["k6", "grafana", "load-testing", "performance", "stress-testing", "browser-testing", "grpc", "websocket", "ci-cd", "chaos-engineering"]
+    }
+  ]
+}

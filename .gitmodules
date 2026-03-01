@@ -1,0 +1,6 @@
+[submodule ".specs/external/claude-code-docs"]
+	path = .specs/external/claude-code-docs
+	url = https://github.com/ericbuess/claude-code-docs
+[submodule ".specs/external/k6-docs"]
+	path = .specs/external/k6-docs
+	url = https://github.com/grafana/k6-docs

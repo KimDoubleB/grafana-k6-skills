@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.yarn/
+.npm/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Build outputs
+dist/
+build/
+.output/
+.vercel/
+.wrangler/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# OS
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
+SESSION.md
+.venv/
+
+# Packaged skills
+*.skill
+
+ref/
