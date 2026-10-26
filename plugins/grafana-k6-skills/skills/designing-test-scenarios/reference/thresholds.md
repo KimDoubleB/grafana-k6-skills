@@ -50,7 +50,7 @@ export const options = {
 | **Rate** | `rate` | `http_req_failed`, `checks` |
 | **Trend** | `avg`, `min`, `max`, `med`, `p(N)` | `http_req_duration`, `iteration_duration` |
 
-**Percentile syntax:** `p(N)` where N is 0.0 to 100 (e.g., `p(90)`, `p(95)`, `p(99)`, `p(99.9)`)
+**Percentile syntax:** `p(N)` where N is 0.0 to 100 (e.g., `p(90)`, `p(95)`, `p(99)`, `p(99.9)`). Since k6 v2.1.0 a value outside that range (or `NaN`) fails parsing and the test does not start.
 
 ## Common Threshold Patterns
 
@@ -135,6 +135,26 @@ export default function () {
   });
 }
 ```
+
+### Per-Scenario Thresholds
+
+k6 tags every sample with the scenario name, so thresholds can target one scenario:
+
+```javascript
+export const options = {
+  scenarios: {
+    browse: { executor: 'constant-arrival-rate', rate: 100, timeUnit: '1s', duration: '5m', preAllocatedVUs: 50, exec: 'browse' },
+    checkout: { executor: 'constant-arrival-rate', rate: 10, timeUnit: '1s', duration: '5m', preAllocatedVUs: 20, exec: 'checkout' },
+  },
+  thresholds: {
+    http_req_failed: ['rate<0.01'],                         // global
+    'http_req_duration{scenario:browse}': ['p(95)<300'],
+    'http_req_duration{scenario:checkout}': ['p(95)<800'],
+  },
+};
+```
+
+When the run uses `--scenario` (v2.3.0+) to exclude a scenario, k6 removes thresholds tagged with that scenario and logs a warning. Global thresholds and filters without a `scenario` tag remain active, so a global `count>N` threshold sized for the full workload can fail a partial run.
 
 ### Group Duration Thresholds
 

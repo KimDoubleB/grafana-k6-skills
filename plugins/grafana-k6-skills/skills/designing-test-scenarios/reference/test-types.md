@@ -30,6 +30,8 @@ export const options = {
 
 **When to run:** After every script change. Before any other test type.
 
+**Single-iteration smoke run (v2.3.0+):** when the script already defines a real load scenario, do not rewrite it for the smoke run. `k6 run --once script.js` executes one VU for one iteration while keeping the scenario's `exec`, `env`, `tags`, and browser options; add `--scenario name` for multi-scenario scripts. `v1.x:` `k6 run --vus 1 --iterations 1 script.js`, which replaces the scenarios with a default one and drops those options.
+
 ---
 
 ## Load Test (Average Load)

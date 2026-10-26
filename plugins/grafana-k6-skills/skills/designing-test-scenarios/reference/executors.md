@@ -10,6 +10,8 @@ k6 provides 6 executor types organized into two models:
 **Open Model** (arrival-rate): Iteration rate is fixed regardless of response time
 - `constant-arrival-rate`, `ramping-arrival-rate`
 
+The `externally-controlled` executor was removed in k6 v2.0.0 together with `k6 pause/resume/scale/status`. Never generate it; pick one of the six executors above.
+
 ---
 
 ## shared-iterations
@@ -213,3 +215,9 @@ export const options = {
 | Ramp RPS up/down | `ramping-arrival-rate` |
 | Breakpoint (find limits) | `ramping-arrival-rate` |
 | Spike test | `ramping-vus` (fast ramp) or `ramping-arrival-rate` |
+| Run the script exactly once (smoke, script check) | Keep the real scenario and run `k6 run --once script.js` (v2.3.0+); `v1.x:` `--vus 1 --iterations 1` |
+| Run a subset of scenarios | Keep all scenarios and run `k6 run --scenario name1,name2 script.js` (v2.3.0+) |
+
+## CLI Shortcuts vs Scenarios
+
+`--vus`, `--duration`, `--iterations`, and `--stage` replace every scenario in the script with a single `default` scenario and print a warning (since v2.1.0 this also applies to `--vus` on its own; `v1.x:` `--vus` alone was ignored when `scenarios` existed). Scenario-level `exec`, `env`, `tags`, and browser options are lost. Prefer `--scenario` and `--once` (v2.3.0+) when the script already defines scenarios.
