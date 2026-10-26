@@ -19,7 +19,8 @@
 | `browser_web_vital_cls` | Trend | Cumulative Layout Shift score |
 | `browser_web_vital_inp` | Trend | Interaction to Next Paint timing |
 | `browser_web_vital_ttfb` | Trend | Time to First Byte timing |
-| `browser_web_vital_fid` | Trend | First Input Delay (deprecated, use INP) |
+
+`browser_web_vital_fid` (First Input Delay) was removed in k6 v2.0.0 together with the web-vitals v5 upgrade. `v1.x:` the metric is still emitted; do not threshold on it, use `browser_web_vital_inp`.
 
 ## Additional Browser Metrics
 
@@ -50,6 +51,31 @@ export const options = {
 };
 ```
 
+### Per-Page Thresholds with the `url` Tag
+
+Browser metrics carry a `url` tag, so one flow can hold different targets per page:
+
+```javascript
+export const options = {
+  thresholds: {
+    'browser_web_vital_lcp': ['p(90)<2500'],
+    'browser_web_vital_lcp{url:https://quickpizza.grafana.com/}': ['p(90)<1500'],
+    'browser_web_vital_inp{url:https://quickpizza.grafana.com/my_messages.php}': ['p(90)<100'],
+  },
+};
+```
+
+Group tags are not reliably applied to browser metrics, so use `url`, not `group`, to split pages.
+
+### Web Vitals Across Page Navigations (v2.3.0+)
+
+When a test navigates between documents in the same tab (login → account → detail), k6 v2.3.0+ records one sample per Web Vital for each page, taking the latest value when the main frame navigates away or the page closes. Earlier versions could lose LCP, CLS, and INP from the intermediate pages. Consequences:
+
+- Averages and percentiles across a flow can change after upgrading even if the application did not. Compare against a fresh baseline and prefer `url`-tagged thresholds.
+- Not every page reports every metric; INP needs a qualifying interaction.
+- Client-side route changes inside a single-page application are still not measured separately.
+- Always `await page.close()` in `finally` so the last page can report.
+
 ### Strict Thresholds (High-Performance)
 
 ```javascript
@@ -75,9 +101,9 @@ export default async function () {
     // Mark start of user action
     await page.evaluate(() => window.performance.mark('action-start'));
 
-    // Perform action
+    // Perform action and wait for its visible result
     await page.getByRole('button', { name: 'Load Data' }).click();
-    await page.waitForLoadState('networkidle');
+    await page.locator('.data-table').waitFor({ state: 'visible' });
 
     // Mark end and measure
     await page.evaluate(() => {
@@ -109,15 +135,16 @@ export default async function () {
   const page = await browser.newPage();
   try {
     const start = Date.now();
-    await page.goto('https://app.example.com');
-    await page.waitForLoadState('networkidle');
+    await page.goto('https://app.example.com', { waitUntil: 'load' });
     pageLoadTime.add(Date.now() - start);
 
     const loginStart = Date.now();
     await page.getByLabel('Email').fill('user@test.com');
     await page.getByLabel('Password').fill('pass123');
-    await page.getByRole('button', { name: 'Login' }).click();
-    await page.waitForNavigation();
+    await Promise.all([
+      page.waitForNavigation(),
+      page.getByRole('button', { name: 'Login' }).click(),
+    ]);
     loginDuration.add(Date.now() - loginStart);
   } finally {
     await page.close();

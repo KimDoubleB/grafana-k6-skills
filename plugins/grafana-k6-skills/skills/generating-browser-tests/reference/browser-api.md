@@ -11,10 +11,17 @@ await page.goto(url, {
   referer: 'https://referrer.example.com',
 });
 
-await page.waitForNavigation({
-  waitUntil: 'networkidle',
-  timeout: 30000,
-});
+// Start waiting BEFORE the action that triggers navigation
+await Promise.all([
+  page.waitForNavigation({ waitUntil: 'load', timeout: 30000 }),
+  page.locator('a.next').click(),
+]);
+
+// Wait for a specific URL (string or RegExp)
+await Promise.all([
+  page.waitForNavigation({ url: /\/checkout$/ }),
+  page.getByRole('button', { name: 'Checkout' }).click(),
+]);
 
 await page.waitForLoadState('networkidle');  // 'domcontentloaded' | 'load' | 'networkidle'
 
@@ -86,6 +93,8 @@ page.on('response', (res) => console.log('RESPONSE:', res.url(), res.status()));
 page.on('requestfailed', (req) => console.log('FAILED:', req.url()));
 ```
 
+Since k6 v2.2.0 the response header accessors (`response.allHeaders()`, `headerValue()`, `headerValues()`, `headersArray()`) return the raw wire headers for each hop of a redirect chain, including `Set-Cookie`; `headerValue()` matches names case-insensitively.
+
 ### Timeouts
 
 ```javascript
@@ -124,6 +133,7 @@ Click options: `button` ('left'|'middle'|'right'), `clickCount`, `delay`, `force
 | `isDisabled([options])` | `Promise<bool>` | Element is disabled |
 | `isEditable([options])` | `Promise<bool>` | Element is editable |
 | `isChecked([options])` | `Promise<bool>` | Checkbox/radio is checked |
+| `isInViewport([{ ratio, timeout }])` | `Promise<bool>` | Element intersects the viewport; `ratio` 0–1 sets how much must be visible (default `0`). k6 v2.1.0+ |
 
 ### Content Queries
 
@@ -163,6 +173,30 @@ await locator.waitFor({
 
 ---
 
+## Browser Types: `chromium.connectOverCDP()` (v2.2.0+)
+
+```javascript
+import { chromium } from 'k6/browser';
+
+export default async function () {
+  const browser = await chromium.connectOverCDP('ws://localhost:9222/devtools/browser/<id>');
+  const page = await browser.newPage();
+  try {
+    await page.goto('https://quickpizza.grafana.com/');
+  } finally {
+    await page.close();
+    await browser.close(); // optional: k6 closes the connection at iteration end
+  }
+}
+```
+
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `chromium.connectOverCDP(wsEndpoint)` | `Promise<Browser>` | `ws://` or `wss://` CDP endpoint. No `options.browser` scenario block needed. `K6_BROWSER_TIMEOUT` and `K6_BROWSER_DEBUG` still apply |
+| `browser.close()` | `Promise<void>` | Only on browsers returned by `connectOverCDP()`. Closes contexts and pages, releases the connection; the external browser keeps running. Using the browser afterwards throws |
+
+Start a local Chrome with `--remote-debugging-port=9222` and read `webSocketDebuggerUrl` from `http://localhost:9222/json/version`. `v1.x:` use the `K6_BROWSER_WS_URL` environment variable with a regular browser scenario.
+
 ## BrowserContext API
 
 ### Creating Contexts
@@ -172,8 +206,18 @@ const context = await browser.newContext();
 const page = await context.newPage();
 
 // Or directly
-const page = await browser.newPage();  // Uses default context
+const defaultPage = await browser.newPage();  // Uses default context
+
+// Route the context's traffic through a proxy (k6 v2.1.0+)
+const proxied = await browser.newContext({
+  proxy: {
+    server: 'http://proxy.test:8080',   // required when proxy is set
+    bypass: 'localhost,127.0.0.1',      // comma-separated hosts that skip the proxy
+  },
+});
 ```
+
+`v1.x:` no context-level proxy; launch Chromium with `K6_BROWSER_ARGS='proxy-server=proxy.test:8080'`.
 
 ### Cookie Management
 
@@ -248,4 +292,23 @@ await page.mouse.up();  // Drag effect
 
 ```javascript
 await page.touchscreen.tap(100, 200);
+```
+
+---
+
+## Browser Module Options (Environment Variables)
+
+| Variable | Purpose |
+|----------|---------|
+| `K6_BROWSER_HEADLESS` | `true` (default) runs without a GUI; set `false` to watch the browser locally |
+| `K6_BROWSER_ARGS` | Extra Chromium flags, comma-separated, **without** the `--` prefix. Common: `no-sandbox` (root in Docker/CI/Kubernetes), `ignore-certificate-errors`, `disable-web-security`, `proxy-server=host:port` |
+| `K6_BROWSER_IGNORE_DEFAULT_ARGS` | Drop specific default Chromium arguments |
+| `K6_BROWSER_EXECUTABLE_PATH` | Absolute path to a Chromium/Chrome binary |
+| `K6_BROWSER_TIMEOUT` | Timeout for connecting to the browser instance (`30s` default) |
+| `K6_BROWSER_DEBUG` | `true` logs all CDP messages |
+| `K6_BROWSER_TRACES_METADATA` | Extra key-value attributes on browser trace spans |
+
+```bash
+K6_BROWSER_ARGS='ignore-certificate-errors,proxy-server=127.0.0.1:8080' k6 run script.js
+docker run --rm -i -e K6_BROWSER_ARGS='no-sandbox' grafana/k6:2.3.0-with-browser run - <script.js
 ```
