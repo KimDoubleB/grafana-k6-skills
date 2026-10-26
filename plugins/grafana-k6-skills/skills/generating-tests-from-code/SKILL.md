@@ -9,6 +9,22 @@ agent: Explore
 
 Analyze an existing API codebase to automatically generate k6 load test scripts. Detects endpoints, authentication patterns, request/response shapes, and generates comprehensive test suites.
 
+## k6 Version Compatibility
+
+Written for **k6 v2.3.0** (current stable). The v1.8.x maintenance line is supported where noted; differences are marked `v1.x:` inline. Before generating, determine the version of the environment that will run the test:
+
+1. Run `k6 version` where the test will execute (prints `k6 v2.3.0 (...)`). For Docker, CI, or k6-operator, read the pinned image tag, the `setup-k6-action` `k6-version` input, or `spec.runner.image`. Also look in the repository being analyzed: a Dockerfile, CI workflow, or existing k6 scripts often reveal the version already in use.
+2. If no version is visible, ask the user. Otherwise assume v2.x and record the assumption in a header comment of the generated script, for example `// Target: k6 v2.3.0`.
+3. Apply the notes below when the target is v1.x.
+
+**Version notes for this skill:**
+- Generate one scenario per resource group and let users run subsets with `k6 run --scenario users,orders script.js` (v2.3.0+). `v1.x:` add an `__ENV.SCENARIO` switch when selecting scenarios.
+- Validate the generated script with `k6 inspect script.js`, then `k6 run --once script.js` (v2.3.0+) against a dev environment. `v1.x:` `k6 run --vus 1 --iterations 1 script.js`.
+- Never emit `auth: 'basic'`; it has no effect. Use an `Authorization` header or credentials in the URL. `'digest'` and `'ntlm'` are the only meaningful `auth` values.
+- Use `k6/secrets` (`--secret-source=file=...`) rather than `__ENV` for credentials discovered in the codebase; secret values are redacted from logs.
+
+For the full feature/version matrix see `/k6:operating-k6-in-ci-cd` (reference/version-compatibility.md).
+
 ## Workflow
 
 Follow this workflow strictly in order:
@@ -67,12 +83,19 @@ See [reference/framework-patterns.md](reference/framework-patterns.md) for frame
 ### Step 4: Script Generation
 
 Generate the k6 test script with:
+- A header comment with the target k6 version (for example `// Target: k6 v2.3.0`)
 - `setup()` for authentication
-- `default()` with grouped endpoint calls
+- One scenario per resource group (so `--scenario` can run a subset) and grouped endpoint calls inside each `exec` function
 - Checks for each response
-- Appropriate thresholds
+- Appropriate thresholds, including per-scenario ones (`'http_req_duration{scenario:orders}'`)
 - Data parameterization where needed
-- Tags for per-endpoint metrics
+- Tags for per-endpoint metrics (`tags: { name: 'GetUser' }` to collapse dynamic URLs)
+
+### Step 5: Validate
+
+1. `k6 inspect script.js` — parses the script and prints the resolved options; catches syntax errors and typos in option names
+2. `k6 run --once script.js` (v2.3.0+) against a development environment — one iteration with the real scenario settings. `v1.x:` `k6 run --vus 1 --iterations 1 script.js`
+3. Report which endpoints returned non-2xx so the user can fix auth or test data before the load run
 
 ## Supported Frameworks
 
@@ -93,6 +116,7 @@ Generate the k6 test script with:
 The generated script should follow this structure:
 
 ```javascript
+// Target: k6 v2.3.0
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 import { SharedArray } from 'k6/data';
@@ -103,8 +127,16 @@ const testData = new SharedArray('data', function () {
 });
 
 export const options = {
-  scenarios: { /* ... */ },
-  thresholds: { /* ... */ },
+  scenarios: {
+    // one scenario per resource group; run a subset with: k6 run --scenario users script.js
+    users: { executor: 'constant-arrival-rate', rate: 50, timeUnit: '1s', duration: '5m', preAllocatedVUs: 20, exec: 'users' },
+    orders: { executor: 'constant-arrival-rate', rate: 10, timeUnit: '1s', duration: '5m', preAllocatedVUs: 10, exec: 'orders' },
+  },
+  thresholds: {
+    http_req_failed: ['rate<0.01'],
+    'http_req_duration{scenario:users}': ['p(95)<300'],
+    'http_req_duration{scenario:orders}': ['p(95)<800'],
+  },
 };
 
 // Authentication setup
@@ -112,22 +144,27 @@ export function setup() {
   // Login and return auth token/session
 }
 
-// Main test function
-export default function (data) {
+// One exported function per scenario
+export function users(data) {
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${data.token}`,
   };
 
-  group('Resource A', () => {
-    // CRUD operations for Resource A
+  group('Users CRUD', () => {
+    // CRUD operations for the users resource
   });
+}
 
-  group('Resource B', () => {
-    // CRUD operations for Resource B
+export function orders(data) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${data.token}`,
+  };
+
+  group('Orders CRUD', () => {
+    // CRUD operations for the orders resource
   });
-
-  sleep(1);
 }
 
 export function teardown(data) {

@@ -7,6 +7,22 @@ description: Use when generating k6 load test scripts from OpenAPI specification
 
 Generate k6 load test scripts by parsing OpenAPI specification files (YAML format). Extracts endpoints, parameters, request bodies, and security schemes to create comprehensive test suites.
 
+## k6 Version Compatibility
+
+Written for **k6 v2.3.0** (current stable). The v1.8.x maintenance line is supported where noted; differences are marked `v1.x:` inline. Before generating, determine the version of the environment that will run the test:
+
+1. Run `k6 version` where the test will execute (prints `k6 v2.3.0 (...)`). For Docker, CI, or k6-operator, read the pinned image tag, the `setup-k6-action` `k6-version` input, or `spec.runner.image`.
+2. If no version is visible, ask the user. Otherwise assume v2.x and record the assumption in a header comment of the generated script, for example `// Target: k6 v2.3.0`.
+3. Apply the notes below when the target is v1.x.
+
+**Version notes for this skill:**
+- Map each OpenAPI `tag` to its own scenario so users can run a subset with `k6 run --scenario Users,Orders script.js` (v2.3.0+). `v1.x:` add an `__ENV.SCENARIO` switch.
+- Validate with `k6 inspect script.js`, then `k6 run --once script.js` (v2.3.0+). `v1.x:` `k6 run --vus 1 --iterations 1 script.js`.
+- `securitySchemes` of type `http`/`basic` become an `Authorization: Basic ...` header or URL credentials; never `auth: 'basic'` (no effect).
+- Operations that use the HTTP `QUERY` method map to `http.query()` (documented for k6 v2.3.x); on older versions fall back to `http.request('QUERY', ...)` only if the server accepts it, otherwise skip them with a note.
+
+For the full feature/version matrix see `/k6:operating-k6-in-ci-cd` (reference/version-compatibility.md).
+
 ## Workflow
 
 ### Step 1: Parse OpenAPI Spec
@@ -61,11 +77,12 @@ paths:
 ```
 
 Map to k6:
-- **Path + method** → HTTP request
+- **Path + method** → HTTP request (`get/post/put/patch/del/head/options`, `query` for QUERY on k6 v2.3.x)
 - **Parameters** → URL params, query string, headers
-- **Request body** → `http.post()` body
-- **Tags** → k6 groups
+- **Request body** → `http.post()` body (`JSON.stringify` + `Content-Type: application/json`; a bare object is form-encoded)
+- **Tags** → one k6 scenario per tag (selectable with `--scenario`, v2.3.0+) with groups inside
 - **Security** → Auth headers
+- **`operationId`** → request `tags: { name: operationId }` so dynamic path parameters do not fragment metrics
 
 ### Step 4: Generate Request Bodies
 
@@ -90,9 +107,10 @@ See [reference/openapi-parsing.md](reference/openapi-parsing.md) for detailed pa
 
 ### Step 5: Script Generation
 
-Organize the generated script by API tags:
+Organize the generated script by API tags, one scenario per tag:
 
 ```javascript
+// Target: k6 v2.3.0
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 
@@ -100,8 +118,10 @@ const BASE_URL = __ENV.BASE_URL || 'https://api.example.com';
 
 export const options = {
   scenarios: {
-    api_test: {
+    // Run one tag only: k6 run --scenario users script.js
+    users: {
       executor: 'ramping-vus',
+      exec: 'users',
       startVUs: 0,
       stages: [
         { duration: '2m', target: 10 },
@@ -120,7 +140,7 @@ export function setup() {
   // Auth flow based on security scheme
 }
 
-export default function (data) {
+export function users(data) {
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${data.token}`,
@@ -159,6 +179,14 @@ Based on endpoint characteristics:
 - **Write endpoints** (POST, PUT) → Lower rate
 - **Admin endpoints** → Separate scenario or excluded
 - **Public endpoints** → No auth scenario
+
+Because each tag is a scenario, the same script serves every stage: `k6 run --scenario users script.js` while iterating on one resource, `k6 run --scenario users,orders --once script.js` as a smoke check, plain `k6 run script.js` for the full load (v2.3.0+).
+
+### Step 7: Validate
+
+1. `k6 inspect script.js` — parse check and resolved options
+2. `k6 run --once script.js` (v2.3.0+) against a dev server, or `k6 run --scenario <tag> --once script.js` for a single tag. `v1.x:` `k6 run --vus 1 --iterations 1 script.js`
+3. Compare returned status codes with the `responses` declared in the spec and report mismatches
 
 ## OpenAPI Spec Quick Reference
 
