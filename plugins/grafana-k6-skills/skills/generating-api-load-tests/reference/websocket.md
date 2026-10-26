@@ -3,10 +3,12 @@
 ## Overview
 
 k6 provides two WebSocket modules:
-- **`k6/websockets`** (recommended) — Uses global event loop, supports multiple concurrent connections per VU
+- **`k6/websockets`** (recommended) — Uses global event loop, supports multiple concurrent connections per VU. The old `k6/experimental/websockets` import path is deprecated; use `k6/websockets`.
 - **`k6/ws`** (legacy) — Uses local event loop, one connection per VU
 
 This reference covers the recommended `k6/websockets` module.
+
+With the `async-metric-context` feature flag (k6 v2.3.0+, `--features async-metric-context`), handlers such as `onmessage` and `addEventListener()` callbacks keep the tags and `group` that were active when they were registered. This applies to `k6/websockets` only, not to `k6/ws`.
 
 ## Quick Start
 
@@ -52,10 +54,10 @@ import { WebSocket } from 'k6/websockets';
 const ws = new WebSocket('wss://example.com/ws');
 
 // With subprotocols
-const ws = new WebSocket('wss://example.com/ws', ['graphql-ws', 'json']);
+const wsWithProtocols = new WebSocket('wss://example.com/ws', ['graphql-ws', 'json']);
 
 // With connection parameters
-const ws = new WebSocket('wss://example.com/ws', null, {
+const wsWithParams = new WebSocket('wss://example.com/ws', null, {
   headers: {
     'Authorization': 'Bearer token123',
     'X-Custom-Header': 'value',
@@ -79,7 +81,7 @@ const ws = new WebSocket('wss://example.com/ws', null, {
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `readyState` | number | `0` CONNECTING, `1` OPEN, `2` CLOSING, `3` CLOSED |
+| `readyState` | number | `0` CONNECTING, `1` OPEN, `2` CLOSING, `3` CLOSED. Compare with the constants `WebSocket.CONNECTING/OPEN/CLOSING/CLOSED` (k6 v2.3.0+, also on each instance as `ws.OPEN`). `v1.x:` compare with the numbers |
 | `url` | string | Resolved connection URL |
 | `bufferedAmount` | number | Bytes queued but not yet sent |
 | `binaryType` | string | `'blob'` (default) or `'arraybuffer'` |
@@ -158,6 +160,11 @@ ws.addEventListener('pong', () => {
 ## Sending Messages
 
 ```javascript
+// Guard with the ready state before sending from a timer or another handler
+if (ws.readyState === WebSocket.OPEN) {   // v1.x: ws.readyState === 1
+  ws.send('ping');
+}
+
 // Text message
 ws.send('Hello, server!');
 

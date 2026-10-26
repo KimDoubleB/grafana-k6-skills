@@ -12,15 +12,18 @@ http.patch(url, [body], [params])          // PATCH request
 http.del(url, [body], [params])            // DELETE request
 http.head(url, [params])                   // HEAD request
 http.options(url, [body], [params])        // OPTIONS request
+http.query(url, [body], [params])          // QUERY request (RFC 10008), documented for k6 v2.3.x
 http.request(method, url, [body], [params]) // Any HTTP method
 http.asyncRequest(method, url, [body], [params]) // Async (returns Promise)
 ```
+
+`http.query()` is for safe, idempotent reads whose parameters are too large or sensitive for a URL; it carries a body like POST but has GET semantics.
 
 ## Request Parameters (Params Object)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `auth` | string | `'basic'`, `'digest'`, or `'ntlm'` |
+| `auth` | string | `'digest'` or `'ntlm'`. `'basic'` has no effect: k6 applies Basic auth automatically when the URL contains credentials (`https://user:pass@host/`) |
 | `cookies` | object | Request-scoped cookies `{ name: 'value' }` or `{ name: { value: 'v', replace: true } }` |
 | `headers` | object | HTTP headers `{ 'Content-Type': 'application/json' }` |
 | `jar` | CookieJar | Override default VU cookie jar |
@@ -85,17 +88,25 @@ res.clickLink({ selector: 'a' })  // Click a link in HTML response
 ### Basic Auth
 
 ```javascript
-// Method 1: Using auth param
+import encoding from 'k6/encoding';
+
+// Method 1: Explicit Authorization header (works for every version)
 const res = http.get('https://api.example.com/protected', {
   headers: {
     Authorization: 'Basic ' + encoding.b64encode('user:pass'),
   },
 });
 
-// Method 2: Using built-in auth
-const res = http.get('https://user:pass@api.example.com/protected', {
-  auth: 'basic',
-});
+// Method 2: Credentials in the URL. k6 adds the Basic header automatically.
+// Do NOT add `auth: 'basic'`; that value has no effect.
+const res2 = http.get('https://user:pass@api.example.com/protected');
+```
+
+Digest and NTLM need the `auth` param because they require a challenge round-trip:
+
+```javascript
+http.get('https://user:pass@api.example.com/digest', { auth: 'digest' });
+http.get('https://user:pass@api.example.com/ntlm', { auth: 'ntlm' });
 ```
 
 ### Bearer Token
@@ -219,12 +230,12 @@ const responses = http.batch([
 ]);
 
 // Named object format (easier to reference results)
-const responses = http.batch({
+const named = http.batch({
   users: { method: 'GET', url: 'https://api.example.com/users' },
   products: { method: 'GET', url: 'https://api.example.com/products' },
 });
-check(responses.users, { 'users ok': (r) => r.status === 200 });
-check(responses.products, { 'products ok': (r) => r.status === 200 });
+check(named.users, { 'users ok': (r) => r.status === 200 });
+check(named.products, { 'products ok': (r) => r.status === 200 });
 ```
 
 ## File Uploads
@@ -256,6 +267,28 @@ export default function () {
     description: 'Test upload',
   });
 }
+```
+
+## Form-Encoded Request Bodies
+
+When `body` is a JavaScript object (and contains no `http.file()` uploads), k6 sends it as `application/x-www-form-urlencoded`:
+
+| Value | Encoded as |
+|-------|------------|
+| `null` or `undefined` | Empty value, field kept: `name=` |
+| Array | Repeated keys: `tag=one&tag=two` |
+| Nested object or nested array | Empty value plus a warning in the log |
+
+```javascript
+http.post(url, { name: null, tags: ['one', null] });  // body: name=&tags=one&tags=
+```
+
+Setting `Content-Type: application/json` alone does **not** turn an object into JSON. Serialize explicitly:
+
+```javascript
+http.post(url, JSON.stringify({ user: { id: 1, roles: ['admin'] } }), {
+  headers: { 'Content-Type': 'application/json' },
+});
 ```
 
 ## Correlation (Extracting Dynamic Values)
@@ -361,6 +394,18 @@ http.get(url, {
 // Set globally
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 399 }));
 ```
+
+## TLS: Missing Intermediate Certificates (v2.3.0+)
+
+Some HTTPS servers work in browsers but fail in k6 with a certificate error because they omit an intermediate CA certificate. Browsers fetch it via the certificate's AIA extension; Go's TLS stack does not. Enable the opt-in fetch instead of disabling verification:
+
+```javascript
+export const options = {
+  tlsAIAFetch: true,   // also applies to gRPC connections; cached for the test run
+};
+```
+
+`v1.x:` not available. Ask the server team to serve the full chain, or use `insecureSkipTLSVerify: true` only outside production.
 
 ## URL Grouping with Name Tag
 

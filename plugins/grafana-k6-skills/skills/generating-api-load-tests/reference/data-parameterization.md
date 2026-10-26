@@ -2,7 +2,7 @@
 
 ## Overview
 
-Data parameterization allows k6 tests to use external data files, environment variables, and dynamically generated data. This makes tests more realistic and avoids hardcoded values.
+Data parameterization allows k6 tests to use external data files, environment variables, secrets, and dynamically generated data. This makes tests more realistic and avoids hardcoded values.
 
 ## SharedArray
 
@@ -32,6 +32,7 @@ export default function () {
 - **Do NOT** use `.filter()`, `.map()`, `.forEach()` on SharedArray (creates regular array, defeats purpose)
 - **Do NOT** pass SharedArray from `setup()` to `default()` (gets marshalled)
 - **Do NOT** `JSON.stringify()` the entire array (creates regular copy)
+- Arrays of large strings are fine since k6 v2.2.0 (primitives are no longer wrapped in `String` objects). `v1.x:` such arrays can use roughly 10× more memory; prefer objects with short fields
 
 ```javascript
 // CORRECT: Load and filter inside constructor
@@ -51,7 +52,7 @@ const users = new SharedArray('users', function () {
 
 ### Using k6/experimental/csv (Native)
 
-> **Note:** These modules are experimental and may change in future k6 versions. Check [k6 release notes](https://grafana.com/docs/k6/latest/release-notes/) for graduation status.
+> **Note:** `k6/experimental/csv` and `k6/experimental/fs` are still experimental as of k6 v2.3.0 and may change. Check [k6 release notes](https://grafana.com/docs/k6/latest/release-notes/) for graduation status.
 
 ```javascript
 import { open } from 'k6/experimental/fs';
@@ -190,6 +191,52 @@ export default function () {
   });
 }
 ```
+
+Treat `__ENV` as read-only. Writes persist across iterations and scenarios and cause hard-to-debug state; the `freeze-env` feature flag (k6 v2.2.0+, `--features freeze-env`) turns such writes into a `TypeError`.
+
+Environment variables are visible in logs and process listings. For credentials, prefer a secret source (next section).
+
+## Secrets (`k6/secrets`)
+
+Values from a secret source are redacted from k6 logs as `***SECRET_REDACTED***`, unlike `__ENV` values. The API is async.
+
+```javascript
+import secrets from 'k6/secrets';
+
+export default async function () {
+  const token = await secrets.get('api_token');                 // from the default source
+  const dbPass = await secrets.source('db').get('password');    // from a named source
+  http.get('https://api.example.com/me', { headers: { Authorization: `Bearer ${token}` } });
+}
+```
+
+| Source | How to configure | Notes |
+|--------|------------------|-------|
+| File | `k6 run --secret-source=file=secrets.file script.js` with `key=value` lines | Several sources: `--secret-source=file=name=db,filename=db.secrets` (`name=` and `default` are generic prefixes for every source type) |
+| Mock | `--secret-source=mock=api_token=abc123` | For local development only |
+| Grafana Cloud | Automatic in `k6 cloud run --local-execution` (k6 v2.0.0+); opt out with `--no-cloud-secrets` | Not available with plain `k6 run` |
+| Env var form | `K6_SECRET_SOURCE=file=secrets.file` (k6 v1.7.0+) | Same syntax as the flag |
+
+`v1.x:` the cloud source is not available on the maintenance line (v1.8.0 enabled it briefly; v1.8.1 reverted). File and mock sources work.
+
+## Binary and Text Encoding
+
+```javascript
+// k6 v2.2.0+: standard globals, no import
+const bytes = new TextEncoder().encode('Hello, world!');   // Uint8Array
+const text = new TextDecoder().decode(bytes);
+
+// k6 v2.3.0+: hex / base64 helpers on Uint8Array
+const fromHex = Uint8Array.fromHex('6b36');
+console.log(fromHex.toBase64()); // azY=
+
+// Any version: k6/encoding
+import encoding from 'k6/encoding';
+const b64 = encoding.b64encode('user:pass');
+const raw = encoding.b64decode(b64, 'std', 's'); // 's' returns a string
+```
+
+`v1.x:` `TextEncoder`/`TextDecoder` and the `Uint8Array` helpers are not available; use `k6/encoding` or an `ArrayBuffer` built by hand.
 
 ## Dynamic Data Generation
 

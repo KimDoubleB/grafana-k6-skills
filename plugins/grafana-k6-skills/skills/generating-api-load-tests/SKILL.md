@@ -7,9 +7,28 @@ description: Use when creating k6 load test scripts for HTTP REST APIs, gRPC ser
 
 Generate k6 load test scripts for protocol-level APIs. Covers HTTP/REST, gRPC, and WebSocket protocols with authentication, data parameterization, checks, and thresholds.
 
+## k6 Version Compatibility
+
+Written for **k6 v2.3.0** (current stable). The v1.8.x maintenance line is supported where noted; differences are marked `v1.x:` inline. Before generating, determine the version of the environment that will run the test:
+
+1. Run `k6 version` where the test will execute (prints `k6 v2.3.0 (...)`). For Docker, CI, or k6-operator, read the pinned image tag, the `setup-k6-action` `k6-version` input, or `spec.runner.image` instead.
+2. If no version is visible, ask the user. Otherwise assume v2.x and record the assumption in a header comment of the generated script, for example `// Target: k6 v2.3.0`.
+3. Apply the notes below when the target is v1.x.
+
+**Version notes for this skill:**
+- `Params.auth: 'basic'` has no effect on any supported version. Basic auth is applied automatically when the URL carries credentials (`https://user:pass@host/`) or set the `Authorization` header yourself. Only `'digest'` and `'ntlm'` are meaningful values.
+- gRPC streaming needs an `async` default function that awaits a `Promise` resolved on `end`; event handlers only run when the call stack is empty (all versions).
+- `http.query()` (HTTP QUERY, RFC 10008) is documented for v2.3.x. `tlsAIAFetch` (fetch missing intermediate CA certificates) and the `WebSocket.OPEN`-style ready-state constants need v2.3.0+.
+- `TextEncoder`/`TextDecoder` globals need v2.2.0+. `v1.x:` use `k6/encoding`.
+- `k6/experimental/redis` was removed in v2.0.0; import `k6/x/redis` (auto-resolved). `v1.x:` community extensions also need `K6_ENABLE_COMMUNITY_EXTENSIONS=true`.
+- Validate generated scripts with `k6 inspect script.js`, then `k6 run --once script.js` (v2.3.0+; `v1.x:` `--vus 1 --iterations 1`).
+
+For the full feature/version matrix see `/k6:operating-k6-in-ci-cd` (reference/version-compatibility.md).
+
 ## Quick Start — HTTP Load Test
 
 ```javascript
+// Target: k6 v2.3.0
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
@@ -23,16 +42,19 @@ export const options = {
 };
 
 export default function () {
-  const res = http.get('https://test-api.k6.io/public/crocodiles/');
+  const res = http.get('https://quickpizza.grafana.com/api/json');
 
   check(res, {
     'status is 200': (r) => r.status === 200,
     'response time < 500ms': (r) => r.timings.duration < 500,
+    'body is JSON': (r) => r.headers['Content-Type'].includes('application/json'),
   });
 
   sleep(1);
 }
 ```
+
+`https://quickpizza.grafana.com` is the public k6 demo service (`/api/json`, `/api/post`, `/api/users/token/login`, `/api/ratings`). The older `test.k6.io` and `test-api.k6.io` hosts redirect there.
 
 ## Test Lifecycle
 
@@ -77,15 +99,16 @@ export function teardown(data) {
 
 Choose the protocol matching your API:
 
-- **HTTP/REST API**: See [reference/http.md](reference/http.md) — GET/POST/PUT/DELETE, authentication (Basic, Bearer, OAuth, API Key), CRUD patterns, batch requests, file uploads, correlation, cookie handling, HTML forms
-- **gRPC**: See [reference/grpc.md](reference/grpc.md) — Client setup, proto loading, unary/streaming calls, metadata, status codes
-- **WebSocket**: See [reference/websocket.md](reference/websocket.md) — Connection lifecycle, message handling, event-driven patterns, binary data
+- **HTTP/REST API**: See [reference/http.md](reference/http.md) — GET/POST/PUT/DELETE/QUERY, authentication (Basic, Bearer, OAuth, API Key), CRUD patterns, batch requests, file uploads, form encoding rules, correlation, cookie handling, HTML forms, TLS options
+- **gRPC**: See [reference/grpc.md](reference/grpc.md) — Client setup, proto loading, unary calls, async streaming pattern, metadata, status codes
+- **WebSocket**: See [reference/websocket.md](reference/websocket.md) — Connection lifecycle, ready-state constants, message handling, event-driven patterns, binary data
+- **Raw TCP**: the official `k6/x/tcp` extension (auto-resolved on import) offers a Node-style `Socket` with `connect()`, `write()`, `on('data')`, TLS, and `tcp_*` metrics for non-HTTP protocols. See `/k6:operating-k6-in-ci-cd` (reference/extensions.md) for the extension table
 
 ## Data Parameterization
 
 For loading test data from external files and generating dynamic data:
 
-See [reference/data-parameterization.md](reference/data-parameterization.md) — SharedArray, CSV/JSON loading, per-VU data, environment variables, dynamic data generation
+See [reference/data-parameterization.md](reference/data-parameterization.md) — SharedArray, CSV/JSON loading, per-VU data, environment variables, secrets (`k6/secrets`), binary/text encoding, dynamic data generation
 
 ## Checks
 
@@ -190,6 +213,7 @@ When generating a k6 test script, follow this process:
 4. **Write the default function**: Main test logic with requests, checks, and sleeps
 5. **Configure options**: VUs, duration, thresholds based on test goals
 6. **Add organization**: Use groups, tags, and custom metrics as needed
+7. **Validate**: `k6 inspect script.js` parses the script and prints the resolved options; `k6 run --once script.js` (v2.3.0+) runs one iteration without touching the scenario definition. `v1.x:` `k6 run --vus 1 --iterations 1 script.js`
 
 ## Related Skills
 
@@ -197,3 +221,4 @@ When generating a k6 test script, follow this process:
 - For interpreting test output and optimizing performance: `/k6:analyzing-test-results`
 - To generate tests from existing API source code: `/k6:generating-tests-from-code`
 - To generate tests from OpenAPI specifications: `/k6:generating-tests-from-openapi`
+- For the k6 version matrix, extensions, and CI execution: `/k6:operating-k6-in-ci-cd`

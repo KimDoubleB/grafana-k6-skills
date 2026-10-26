@@ -104,6 +104,8 @@ client.connect('localhost:50051', {
 | `maxSendSize` | number | ~2GB | Max message size to send |
 | `tls` | object | `null` | TLS settings (cert, key, password, cacerts) |
 
+If the server omits an intermediate CA certificate, set the test-wide option `tlsAIAFetch: true` (k6 v2.3.0+) so k6 fetches it instead of failing the handshake. `v1.x:` provide `cacerts` with the full chain.
+
 ## Unary RPC Calls
 
 ```javascript
@@ -114,7 +116,7 @@ const response = client.invoke('package.Service/Method', {
 });
 
 // With metadata (headers)
-const response = client.invoke('package.Service/Method', requestMessage, {
+const withMetadata = client.invoke('package.Service/Method', requestMessage, {
   metadata: {
     'authorization': 'Bearer token123',
     'x-request-id': 'abc-123',
@@ -123,15 +125,15 @@ const response = client.invoke('package.Service/Method', requestMessage, {
 });
 
 // With custom tags and timeout
-const response = client.invoke('package.Service/Method', requestMessage, {
+const withOptions = client.invoke('package.Service/Method', requestMessage, {
   tags: { name: 'MyRPC' },
   timeout: '5s',
 });
 
-// Async invoke
+// Async invoke (inside an async function)
 const promise = client.asyncInvoke('package.Service/Method', requestMessage);
 // ... do other work ...
-const response = await promise;
+const asyncResponse = await promise;
 ```
 
 ## Invoke Parameters
@@ -178,77 +180,105 @@ const response = await promise;
 
 ## Streaming
 
+### Streaming Requires an Async Default Function
+
+Stream events (`data`, `error`, `end`) are delivered through handlers that only run when the JavaScript call stack is empty. In a synchronous `default` function the handlers would fire only after the function returns, so wrap the stream in a `Promise` that resolves on `end` and `await` it:
+
+```javascript
+export default async function () {
+  client.connect('localhost:50051', { plaintext: true });
+  const stream = new grpc.Stream(client, 'package.Service/Method');
+
+  await new Promise((resolve, reject) => {
+    stream.on('data', (msg) => { /* handle message */ });
+    stream.on('error', (err) => reject(err));
+    stream.on('end', () => { client.close(); resolve(); });
+
+    stream.write({ /* first message */ });
+    stream.end();   // client/bidi streams: signal no more client messages
+  });
+}
+```
+
+Do not use `sleep()` to "wait" for stream events; it blocks the event loop and the handlers never run.
+
 ### Client Streaming
 
 ```javascript
-const stream = new grpc.Stream(client, 'package.Service/ClientStreamMethod');
+export default async function () {
+  client.connect('localhost:50051', { plaintext: true });
+  const stream = new grpc.Stream(client, 'package.Service/ClientStreamMethod');
 
-stream.on('data', (response) => {
-  check(response, {
-    'stream response OK': (r) => r.status === grpc.StatusOK,
+  await new Promise((resolve, reject) => {
+    stream.on('data', (response) => {
+      check(response, { 'stream response OK': (r) => r.status === grpc.StatusOK });
+    });
+    stream.on('error', (err) => {
+      console.error('Stream error:', JSON.stringify(err));
+      reject(err);
+    });
+    stream.on('end', () => {
+      console.log('Stream ended');
+      client.close();
+      resolve();
+    });
+
+    stream.write({ data: 'message 1' });
+    stream.write({ data: 'message 2' });
+    stream.write({ data: 'message 3' });
+    stream.end(); // Signal end of client stream
   });
-});
-
-stream.on('error', (err) => {
-  console.error('Stream error:', JSON.stringify(err));
-});
-
-stream.on('end', () => {
-  console.log('Stream ended');
-});
-
-// Send multiple messages
-stream.write({ data: 'message 1' });
-stream.write({ data: 'message 2' });
-stream.write({ data: 'message 3' });
-stream.end(); // Signal end of client stream
+}
 ```
 
 ### Server Streaming
 
 ```javascript
-const stream = new grpc.Stream(client, 'package.Service/ServerStreamMethod');
+export default async function () {
+  client.connect('localhost:50051', { plaintext: true });
+  const stream = new grpc.Stream(client, 'package.Service/ServerStreamMethod');
 
-stream.on('data', (message) => {
-  console.log('Received:', JSON.stringify(message));
-});
+  await new Promise((resolve, reject) => {
+    stream.on('data', (message) => {
+      console.log('Received:', JSON.stringify(message));
+    });
+    stream.on('error', (err) => reject(err));
+    stream.on('end', () => {
+      console.log('All messages received');
+      client.close();
+      resolve();
+    });
 
-stream.on('error', (err) => {
-  console.error('Error:', JSON.stringify(err));
-});
-
-stream.on('end', () => {
-  console.log('All messages received');
-});
-
-// Send single request to start server stream
-stream.write({ query: 'search term' });
+    stream.write({ query: 'search term' }); // Single request starts the server stream
+  });
+}
 ```
 
 ### Bidirectional Streaming
 
 ```javascript
-const stream = new grpc.Stream(client, 'package.Service/BidiStreamMethod', {
-  metadata: { 'authorization': 'Bearer token123' },
-});
+export default async function () {
+  client.connect('localhost:50051', { plaintext: true });
+  const stream = new grpc.Stream(client, 'package.Service/BidiStreamMethod', {
+    metadata: { authorization: 'Bearer token123' },
+  });
 
-stream.on('data', (message) => {
-  console.log('Server:', JSON.stringify(message));
-  // Respond to server messages
-  if (message.needsReply) {
-    stream.write({ reply: 'acknowledged' });
-  }
-});
+  await new Promise((resolve, reject) => {
+    let received = 0;
+    stream.on('data', (message) => {
+      console.log('Server:', JSON.stringify(message));
+      if (message.needsReply) stream.write({ reply: 'acknowledged' });
+      if (++received >= 10) stream.end(); // Decide when the client side is done
+    });
+    stream.on('error', (err) => reject(err));
+    stream.on('end', () => {
+      client.close();
+      resolve();
+    });
 
-stream.on('error', (err) => {
-  console.error('Error:', JSON.stringify(err));
-});
-
-stream.on('end', () => {
-  console.log('Stream ended');
-});
-
-stream.write({ action: 'subscribe', topic: 'updates' });
+    stream.write({ action: 'subscribe', topic: 'updates' });
+  });
+}
 ```
 
 ## Stream API
@@ -261,6 +291,8 @@ stream.write({ action: 'subscribe', topic: 'updates' });
 | `stream.on('data', handler)` | Handle incoming messages |
 | `stream.on('error', handler)` | Handle errors |
 | `stream.on('end', handler)` | Handle stream completion |
+
+The `async-metric-context` feature flag (k6 v2.3.0+, `--features async-metric-context`) makes stream handlers keep the tags and `group` active when the stream was created; without it, metrics emitted inside handlers may lose the group tag.
 
 ## Complete Example: Authenticated gRPC Test
 
