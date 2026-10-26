@@ -4,3 +4,8 @@
 [submodule ".specs/external/k6-docs"]
 	path = .specs/external/k6-docs
 	url = https://github.com/grafana/k6-docs
+	shallow = true
+[submodule ".specs/external/k6"]
+	path = .specs/external/k6
+	url = https://github.com/grafana/k6
+	shallow = true
