@@ -24,6 +24,7 @@ plugins/grafana-k6-skills/                         # Plugin (installation unit)
 - Max 1024 characters for frontmatter total
 - Body under 500 lines — route to `reference/` files for details
 - Naming convention: gerund format (`generating-*`, `designing-*`, `analyzing-*`)
+- Includes a `## k6 Version Compatibility` section right after the intro paragraph (detection steps + skill-specific `v1.x:` notes)
 
 ### Reference Files
 
@@ -34,9 +35,10 @@ plugins/grafana-k6-skills/                         # Plugin (installation unit)
 ### Adding a New Skill
 
 1. Create `plugins/grafana-k6-skills/skills/<skill-name>/SKILL.md` with frontmatter
-2. Create `plugins/grafana-k6-skills/skills/<skill-name>/reference/` with supporting docs
-3. Verify line count: `wc -l plugins/grafana-k6-skills/skills/<skill-name>/SKILL.md` (must be < 500)
-4. Add the skill to the README.md skills table
+2. Add the `## k6 Version Compatibility` section (copy the detection steps from an existing skill, write the skill-specific notes)
+3. Create `plugins/grafana-k6-skills/skills/<skill-name>/reference/` with supporting docs
+4. Verify line count: `wc -l plugins/grafana-k6-skills/skills/<skill-name>/SKILL.md` (must be < 500)
+5. Add the skill to the README.md skills table
 
 ## Common Commands
 
@@ -59,13 +61,19 @@ claude plugin validate .
 
 ## k6 Version Scope
 
-Skills target k6 v1.x (current stable). Key version-specific features:
-- Automatic extension resolution: v1.2.0+
-- `k6/browser` module: stable in v1.x
-- `k6/websockets` module: preferred over legacy `k6/ws`
-- `k6/experimental/csv`: for CSV parsing (experimental)
+Skills target **k6 v2.3.0** (current stable, v2.x line). The v1.8.x maintenance line (security fixes only) is supported where a skill marks differences with a `v1.x:` prefix. The pinned reference snapshots and the "content last verified against" record live in `.specs/K6_VERSION.md`; update that file in the same change as any content sync.
 
-When k6 releases breaking changes, update the affected reference files and verify code examples still work.
+Version boundaries that skills must respect:
+- v2.0.0 (2026-05): Go module path `go.k6.io/k6/v2`; removed `externally-controlled`, `k6 login`, `--no-summary`, `--summary-mode=legacy`, `options.ext.loadimpact`, `k6/experimental/redis`, `K6_ENABLE_COMMUNITY_EXTENSIONS`, `browser_web_vital_fid`; REST API off by default; `k6 cloud` requires a stack; cloud aborts exit 97
+- v2.1.0: feature flags (`--features`, `K6_FEATURES`, `k6 features`), browser context `proxy`, `locator.isInViewport()`
+- v2.2.0: `chromium.connectOverCDP()`, `TextEncoder`/`TextDecoder` globals, `handleSummaryTimeout`
+- v2.3.0: `--scenario`, `--once`, `async-metric-context` flag, `tlsAIAFetch`, `K6_PROMETHEUS_RW_LABELS`, WebSocket ready-state constants
+- v1.7.0: subcommand extension auto-resolution (`k6 x <ext>`); v1.2.0: JavaScript extension auto-resolution
+- `k6/experimental/csv`, `k6/experimental/fs`, `k6/experimental/streams` remain experimental
+
+Every SKILL.md has a `## k6 Version Compatibility` section with the same three detection steps and skill-specific notes. The canonical feature/version matrix and per-environment detection procedure are in `plugins/grafana-k6-skills/skills/operating-k6-in-ci-cd/reference/version-compatibility.md`.
+
+When k6 releases a new version: bump the submodules (procedure in `.specs/K6_VERSION.md`), diff `docs/sources/k6/v<new>.x/` against the previous folder, update affected reference files, run `k6 inspect` on changed examples, then update the version strings in CLAUDE.md, README.md, every Version Compatibility section, `version-compatibility.md`, and `.specs/K6_VERSION.md`.
 
 ## Cross-Skill References
 
@@ -78,9 +86,12 @@ grep -r "/k6:" plugins/grafana-k6-skills/skills/*/SKILL.md
 ## Content Accuracy
 
 All reference files are synthesized from:
-- k6-docs git submodule (`.specs/external/k6-docs/`)
+- k6-docs git submodule (`.specs/external/k6-docs/`; read `docs/sources/k6/v2.3.x/`, not `next/`, which holds unreleased content)
+- k6 source git submodule (`.specs/external/k6/`, tag `v2.3.0`; use it for option defaults, error messages, and `release notes/`)
 
-When updating content, verify against the official k6 documentation site at https://grafana.com/docs/k6/latest/. Use WebSearch for checking current API details.
+Initialize them shallowly: `git submodule update --init --depth 1 .specs/external/k6 .specs/external/k6-docs`. Nothing under `.specs/` ships with the plugin.
+
+When updating content, verify against the official k6 documentation site at https://grafana.com/docs/k6/latest/. Use WebSearch for checking current API details. Example scripts must pass `k6 inspect <script>` with a k6 v2.3.0 binary.
 
 ## Style Conventions
 
@@ -90,3 +101,6 @@ When updating content, verify against the official k6 documentation site at http
 - Include `check()` assertions in all generated test scripts
 - Use `svc.cluster.local` DNS format for Kubernetes service URLs in examples
 - Thresholds should use percentile-based metrics (`p(95)`, `p(99)`) not averages
+- Public demo targets use `https://quickpizza.grafana.com` endpoints (`test.k6.io` and `test-api.k6.io` redirect there)
+- Generated scripts start with a header comment naming the target k6 version, for example `// Target: k6 v2.3.0`
+- Mark v1.x-only behavior inline with a `v1.x:` prefix; never generate removed v1 features (`externally-controlled`, `--no-summary`, `K6_ENABLE_COMMUNITY_EXTENSIONS`, `browser_web_vital_fid`)

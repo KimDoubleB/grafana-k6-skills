@@ -5,6 +5,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that prov
 ## Table of Contents
 
 - [Overview](#overview)
+- [Supported k6 Versions](#supported-k6-versions)
 - [Skills](#skills)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -27,6 +28,22 @@ This plugin extends Claude Code with 8 specialized skills covering the full k6 l
 - Analyze test results, identify bottlenecks, and optimize performance
 - Set up k6 in CI/CD pipelines and Kubernetes distributed environments
 - Build chaos engineering tests with fault injection
+
+### Relationship to the official `k6 x agent` skills
+
+Since k6 v2.1, `k6 x agent init claude-code` installs Grafana's own bundled skills (test planner, load/smoke/browser test, Playwright converter) and registers the `k6 x mcp` server. This plugin complements them: it adds generation from OpenAPI specs and existing codebases, CI/CD and k6-operator operations, results and bottleneck analysis, and resilience testing. The two can be installed side by side; use `k6 x mcp`'s `validate_script` or `k6 inspect` to validate scripts generated here.
+
+## Supported k6 Versions
+
+| k6 line | Latest release | Status | Plugin support |
+|---------|----------------|--------|----------------|
+| **v2.x** | v2.3.0 (2026-09-21) | Current stable | Primary target. All examples are written and checked against this version. |
+| v1.x | v1.8.2 (2026-10-12) | Maintenance (security fixes only) | Supported. Differences are marked `v1.x:` inside each skill. |
+| v0.x | v0.59.0 | End of life | Not supported. Upgrade first. |
+
+Every skill starts by determining the k6 version of the environment where the test will run (`k6 version`, the Docker image tag, the `setup-k6-action` `k6-version` input, or the k6-operator runner image), then applies the matching notes. If the version cannot be determined, the skill asks and otherwise assumes v2.x, recording the assumption in a header comment of the generated script. The full feature/version matrix lives in `plugins/grafana-k6-skills/skills/operating-k6-in-ci-cd/reference/version-compatibility.md`.
+
+> **Note on resilience testing:** `xk6-disruptor`, which the `testing-resilience` skill is built on, was archived by Grafana Labs in February 2026 and only builds into k6 v1.x binaries. The skill documents the constraint; see its SKILL.md before use.
 
 ## Skills
 
@@ -205,7 +222,7 @@ into the payment-service while running a load test against the checkout flow.
 ## Prerequisites
 
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Anthropic's CLI tool for coding with Claude
-- **[Grafana k6](https://k6.io/)** — Load testing tool (for running generated scripts)
+- **[Grafana k6](https://k6.io/)** — Load testing tool (for running generated scripts). v2.3.0 recommended; v1.8.x supported with the noted differences
 - **Kubernetes cluster** — Required only for `operating-k6-in-ci-cd` (k6-operator) and `testing-resilience` (xk6-disruptor) skills
 
 ## Contributing
@@ -216,8 +233,9 @@ Contributions are welcome! To add or improve skills:
 2. Follow the existing skill structure: `SKILL.md` + `reference/` directory
 3. Keep `SKILL.md` under 500 lines — use reference files for detailed content
 4. Use YAML frontmatter with `name` and `description` fields
-5. Cross-check reference content accuracy against [official k6 documentation](https://grafana.com/docs/k6/latest/)
-6. Submit a pull request
+5. Cross-check reference content accuracy against [official k6 documentation](https://grafana.com/docs/k6/latest/) and run `k6 inspect` on changed examples
+6. Keep the `## k6 Version Compatibility` section of each SKILL.md current
+7. Submit a pull request
 
 ### Skill Guidelines
 
