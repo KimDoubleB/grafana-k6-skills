@@ -35,11 +35,12 @@
 | `browser_web_vital_cls` | Trend | Cumulative Layout Shift |
 | `browser_web_vital_inp` | Trend | Interaction to Next Paint |
 | `browser_web_vital_ttfb` | Trend | Time to First Byte |
-| `browser_web_vital_fid` | Trend | First Input Delay (deprecated) |
 | `browser_data_received` | Counter | Browser data received (bytes) |
 | `browser_data_sent` | Counter | Browser data sent (bytes) |
 | `browser_http_req_duration` | Trend | Browser HTTP request duration |
 | `browser_http_req_failed` | Rate | Browser failed request rate |
+
+`browser_web_vital_fid` was removed in k6 v2.0.0. `v1.x:` still emitted; treat it as noise and use `browser_web_vital_inp`. Since v2.3.0 each page visited in the same tab contributes its own Web Vitals samples, so flow-level aggregates differ from older versions.
 
 ## WebSocket Metrics
 
@@ -65,7 +66,7 @@
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `checks` | Rate | Overall rate of successful checks |
+| `checks` | Rate | Overall rate of successful checks. The end-of-test summary displays it as `checks_total` (count), `checks_succeeded`, and `checks_failed`; those three names are display-only, are not sent to outputs, and cannot be used in thresholds |
 
 ## Group Metrics
 
@@ -123,6 +124,15 @@ apiLatency.add(200);
 // Threshold: avg, min, max, med, p(N)
 // 'api_latency': ['p(95)<500', 'avg<200']
 ```
+
+## Tags k6 Adds Automatically
+
+| Tag | Set on | Notes |
+|-----|--------|-------|
+| `scenario` | every sample | Scenario name; used by `--scenario` to decide which thresholds to skip |
+| `group` | every sample | `::outer::inner` path; unreliable across `await` unless `--features async-metric-context` (v2.3.0+) |
+| `url`, `name`, `method`, `status`, `expected_response` | HTTP samples | Set `tags: { name }` to collapse dynamic URLs |
+| `k6_feature_<flag>` | every sample while a feature flag is active (v2.1.0+) | e.g. `k6_feature_native_histograms="true"`; filter on it when comparing runs |
 
 ## Metric Type Aggregation Methods
 

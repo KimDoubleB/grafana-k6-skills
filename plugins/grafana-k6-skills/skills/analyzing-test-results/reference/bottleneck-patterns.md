@@ -12,6 +12,7 @@
 | High error rate | `http_req_failed` > 1% | Server overload, bugs | Check error codes, server logs, capacity |
 | Low throughput | `http_reqs` rate declining | Resource saturation | Scale infrastructure, optimize code |
 | Dropped iterations | `dropped_iterations` > 0 | Not enough VUs for target rate | Increase `preAllocatedVUs` or `maxVUs` |
+| TLS errors only in k6 | `http_req_failed` with `x509: certificate signed by unknown authority` while browsers load the site | Server omits an intermediate CA certificate | `tlsAIAFetch: true` (k6 v2.3.0+) fetches it; `v1.x:` fix the server chain or `insecureSkipTLSVerify` outside production |
 
 ## Pattern 1: Connection Pool Exhaustion
 
@@ -119,6 +120,19 @@
 - `http_reqs` rate declining while VUs are constant
 - `http_req_blocked` growing (connection issues)
 - `dropped_iterations` increasing (can't keep up with arrival rate)
+
+## Measurement Caveats by k6 Version
+
+Before blaming the system under test, rule out known measurement bugs in older k6 builds:
+
+| Symptom | Affected versions | Fixed in |
+|---------|-------------------|----------|
+| `http_req_sending` and `http_req_duration` inflated when going through an HTTPS proxy | ≤ v2.2.0 | v2.3.0 |
+| A counter `rate` threshold fails with `+Inf` on a near-zero-duration run | ≤ v2.1.0 | v2.2.0 |
+| A gauge with only negative values reports `max=0` | ≤ v2.1.0 | v2.2.0 |
+| Browser redirect chains emit duplicate request metrics | ≤ v1.7.x | v1.8.0 / v2.0.0 |
+| `ramping-vus` silently stops a scenario (and reports success) when a VU cannot start | ≤ v2.2.0 | v2.3.0 (now errors) |
+| Memory ~10× higher for `SharedArray` of large strings | ≤ v2.1.0 | v2.2.0 |
 
 ## Performance Ratio Guidelines
 
