@@ -1,5 +1,7 @@
 # Resilience Test Patterns Reference
 
+> All patterns require a k6 **v1.x** binary with xk6-disruptor v0.3.17 (archived). On k6 v1.8.x run them with `K6_ENABLE_COMMUNITY_EXTENSIONS=true`. On k6 v2.x the extension cannot be loaded; see SKILL.md for alternatives.
+
 ## Pattern 1: Graceful Degradation
 
 Verify the system degrades gracefully under partial failure instead of cascading.
@@ -393,10 +395,10 @@ export default function () {
 **Usage:**
 ```bash
 # Run baseline (no faults)
-SKIP_FAULTS=1 k6 run test.js --out json=baseline.json
+K6_ENABLE_COMMUNITY_EXTENSIONS=true SKIP_FAULTS=1 k6 run test.js --out json=baseline.json
 
 # Run with faults
-k6 run test.js --out json=fault.json
+K6_ENABLE_COMMUNITY_EXTENSIONS=true k6 run test.js --out json=fault.json
 
 # Compare results
 # Baseline: ~100ms p95, 0% errors

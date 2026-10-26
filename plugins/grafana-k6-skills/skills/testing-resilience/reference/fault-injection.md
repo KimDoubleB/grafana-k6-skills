@@ -1,5 +1,7 @@
 # Fault Injection Reference
 
+> xk6-disruptor is archived (February 2026) and only works with k6 **v1.x** binaries. API below is for v0.3.17, the final release.
+
 ## ServiceDisruptor
 
 Targets all pods behind a Kubernetes Service.
@@ -133,12 +135,21 @@ subjects:
     namespace: k6-test
 ```
 
-### Running in Cluster
+### Where k6 Runs
 
-For xk6-disruptor to work, k6 must run **inside the Kubernetes cluster** (not locally). Options:
-- k6-operator TestRun
-- Pod with k6 + xk6-disruptor image
-- CI/CD runner with cluster access
+xk6-disruptor talks to the Kubernetes API (it injects an agent as an ephemeral container into the target pods) and the load part of the script must reach the service. Both are satisfied by:
+- A k6-operator `TestRun` with `runner.image: grafana/k6:v1` and `K6_ENABLE_COMMUNITY_EXTENSIONS=true` in `runner.env` (or a custom v1 image with the extension baked in)
+- A pod or CI runner inside the cluster using a service account with the RBAC above
+- A workstation with a kubeconfig, when the service is exposed (the official guide runs the examples this way)
+
+### Binary Requirements
+
+| Way to run | Command | Notes |
+|------------|---------|-------|
+| k6 v1.8.x auto-resolution | `K6_ENABLE_COMMUNITY_EXTENSIONS=true k6 run chaos.js` | Community tier; the variable is mandatory on v1.x and does not exist on v2.x |
+| xk6 build | `xk6 build v1.8.2 --with github.com/grafana/xk6-disruptor` | Fails for `xk6 build v2.x` (module path mismatch) |
+| Prebuilt binary | `xk6-disruptor run chaos.js` from the v0.3.17 GitHub release | Bundles its own k6 v1.x |
+| k6 v2.x | not possible | Use a `grafana/k6:v1` image for the chaos job or a cluster-native chaos tool |
 
 ## Fault Duration vs Test Duration
 
