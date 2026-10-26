@@ -57,7 +57,16 @@ cat plugins/grafana-k6-skills/.claude-plugin/plugin.json
 
 # Validate marketplace
 claude plugin validate .
+
+# End-to-end install test in an isolated config dir (does not touch ~/.claude)
+CLAUDE_CONFIG_DIR=$(mktemp -d) sh -c 'claude plugin marketplace add "$PWD" && claude plugin install k6@grafana-k6-skills && claude plugin details k6'
 ```
+
+## Releasing
+
+- The install id is `k6@grafana-k6-skills`: `k6` is the entry name in `marketplace.json` and `plugin.json`, `grafana-k6-skills` is the marketplace `name`. Never document `<owner>-<repo>` as the marketplace name.
+- Keep `version` only in `plugins/grafana-k6-skills/.claude-plugin/plugin.json` (not in the marketplace entry). Bump it on every content release; installed copies are refreshed only when the version string changes.
+- Reference submodules stay under `.specs/`, outside the plugin directory, so Claude Code v2.1.295+ does not fetch them when users add the marketplace.
 
 ## k6 Version Scope
 

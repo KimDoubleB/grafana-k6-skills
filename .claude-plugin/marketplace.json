@@ -11,7 +11,6 @@
       "name": "k6",
       "source": "./plugins/grafana-k6-skills",
       "description": "Grafana k6 load testing skills for generating test scripts, designing scenarios, analyzing results, and operating k6 infrastructure.",
-      "version": "0.1.0",
       "category": "testing",
       "homepage": "https://github.com/KimDoubleB/grafana-k6-skills",
       "repository": "https://github.com/KimDoubleB/grafana-k6-skills",

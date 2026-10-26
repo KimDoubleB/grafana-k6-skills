@@ -1,6 +1,6 @@
 # k6 Skills for Claude Code
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that provides comprehensive skills for [Grafana k6](https://k6.io/) load testing. Generate test scripts, design load scenarios, analyze results, and operate k6 infrastructure — all through natural language conversations.
+A [Claude Code](https://code.claude.com/docs/en/overview) plugin that provides comprehensive skills for [Grafana k6](https://k6.io/) load testing. Generate test scripts, design load scenarios, analyze results, and operate k6 infrastructure — all through natural language conversations.
 
 ## Table of Contents
 
@@ -72,20 +72,80 @@ Every skill starts by determining the k6 version of the environment where the te
 
 ## Installation
 
-### Plugin Installation (Recommended)
+### Requirements
 
-Install via Claude Code's plugin marketplace for automatic updates:
+- [Claude Code](https://code.claude.com/docs/en/overview) **v2.1.295 or later** is recommended. Earlier versions clone every git submodule of a marketplace repository; this repository keeps large reference submodules under `.specs/`, so older clients may hit the clone timeout. If you must use an older version, add the marketplace with a sparse checkout (see below).
+- `git` on your machine (Claude Code clones the marketplace with it).
 
-```
+### Install in a Claude Code session
+
+```text
 /plugin marketplace add KimDoubleB/grafana-k6-skills
-/plugin install k6@KimDoubleB-grafana-k6-skills
+/plugin install k6@grafana-k6-skills
 ```
 
-After installation, the skills are available in all your Claude Code sessions.
+The second command opens the plugin's details in the `/plugin` panel; pick a scope (user, project, or local) to finish. The marketplace is registered under the `name` in its `marketplace.json`, which is `grafana-k6-skills`, not the repository name.
 
-### Standalone Skill Installation
+### Install from your shell (scripts, CI)
 
-Extract the skill folders manually:
+```bash
+claude plugin marketplace add KimDoubleB/grafana-k6-skills
+claude plugin install k6@grafana-k6-skills            # add --scope project to enable it for a repository
+
+# One-liner (Claude Code v2.1.292+): adds the marketplace and installs in one step
+claude plugin install k6 --marketplace KimDoubleB/grafana-k6-skills
+
+# Older Claude Code: fetch only the plugin directories, skipping the reference submodules
+claude plugin marketplace add KimDoubleB/grafana-k6-skills --sparse .claude-plugin plugins
+```
+
+### Install for a whole repository (team)
+
+Commit this to the repository's `.claude/settings.json`. Claude Code registers the marketplace for every collaborator who trusts the folder and enables the plugin; each collaborator then runs `claude plugin install k6@grafana-k6-skills --scope project` once to download it.
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "grafana-k6-skills": {
+      "source": { "source": "github", "repo": "KimDoubleB/grafana-k6-skills" }
+    }
+  },
+  "enabledPlugins": {
+    "k6@grafana-k6-skills": true
+  }
+}
+```
+
+### Verify the installation
+
+```bash
+claude plugin list          # shows k6@grafana-k6-skills with Status: ✔ enabled
+claude plugin details k6    # Component inventory: Skills (8) ... and the projected token cost
+```
+
+In a session, type `/k6:` and the eight skills appear as `/k6:<skill-name>`. Skills also trigger automatically from natural-language requests (see [Usage](#usage)).
+
+### Update
+
+Third-party marketplaces do not auto-update by default. To pull a new release:
+
+```bash
+claude plugin marketplace update grafana-k6-skills   # refresh the catalog
+claude plugin update k6@grafana-k6-skills            # update the plugin; restart or /reload-plugins to apply
+```
+
+Or, in a session, open `/plugin`, go to the **Marketplaces** tab, select `grafana-k6-skills`, and choose **Update marketplace** or **Enable auto-update**. A new copy is delivered only when the plugin's `version` changes, so releases of this plugin always bump the version in `plugin.json`.
+
+### Uninstall
+
+```bash
+claude plugin uninstall k6@grafana-k6-skills
+claude plugin marketplace remove grafana-k6-skills   # also uninstalls every plugin from this marketplace
+```
+
+### Standalone skills (without the plugin system)
+
+Copy the skill folders into your personal skills directory:
 
 ```bash
 git clone --depth 1 https://github.com/KimDoubleB/grafana-k6-skills.git /tmp/k6-skills-temp && \
@@ -94,17 +154,11 @@ cp -r /tmp/k6-skills-temp/plugins/grafana-k6-skills/skills/* ~/.claude/skills/ &
 rm -rf /tmp/k6-skills-temp
 ```
 
-### Verify Installation
-
-After installation, you can verify the plugin is loaded by asking Claude Code:
-
-```
-What k6 skills do you have available?
-```
+Installed this way the skills load without the `k6:` prefix (`/generating-api-load-tests` instead of `/k6:generating-api-load-tests`), and the `/k6:<skill>` cross-references inside the skills do not resolve as commands. You also have to repeat the copy to update. Prefer the plugin install when you can.
 
 ## Usage
 
-Skills are automatically activated when Claude detects a relevant context. You can also invoke them explicitly using the `/k6:<skill-name>` syntax.
+Skills are automatically activated when Claude detects a relevant context. You can also invoke them explicitly using the `/k6:<skill-name>` syntax. Every skill first determines the k6 version of your environment (see [Supported k6 Versions](#supported-k6-versions)) and adapts its output.
 
 ### Generate an API Load Test
 
@@ -205,14 +259,14 @@ into the payment-service while running a load test against the checkout flow.
 │           │   ├── SKILL.md         # Results interpretation & optimization
 │           │   └── reference/
 │           ├── operating-k6-in-ci-cd/
-│           │   ├── SKILL.md         # CI/CD & Kubernetes operations
-│           │   └── reference/
+│           │   ├── SKILL.md         # CI/CD & Kubernetes operations, k6 version detection
+│           │   └── reference/       # includes version-compatibility.md (canonical version matrix)
 │           └── testing-resilience/
 │               ├── SKILL.md         # Chaos engineering & fault injection
 │               └── reference/
-├── .specs/external/                 # Git submodules (development reference)
-│   ├── claude-code-docs/
-│   └── k6-docs/
+├── .specs/                          # Maintainer-only; not part of the installed plugin
+│   ├── K6_VERSION.md                # Which k6 version the content targets and the pinned snapshots
+│   └── external/                    # Git submodules (shallow): k6 source @ v2.3.0, k6-docs, claude-code-docs
 ├── CLAUDE.md                        # Claude Code project instructions
 ├── README.md
 ├── LICENSE
@@ -221,7 +275,7 @@ into the payment-service while running a load test against the checkout flow.
 
 ## Prerequisites
 
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Anthropic's CLI tool for coding with Claude
+- **[Claude Code](https://code.claude.com/docs/en/overview)** — Anthropic's CLI tool for coding with Claude (v2.1.295 or later recommended; see [Requirements](#requirements))
 - **[Grafana k6](https://k6.io/)** — Load testing tool (for running generated scripts). v2.3.0 recommended; v1.8.x supported with the noted differences
 - **Kubernetes cluster** — Required only for `operating-k6-in-ci-cd` (k6-operator) and `testing-resilience` (xk6-disruptor) skills
 
@@ -252,5 +306,5 @@ This project is licensed under the [MIT License](LICENSE).
 
 - [Grafana k6](https://k6.io/) — The load testing tool this plugin supports
 - [k6 Documentation](https://grafana.com/docs/k6/latest/) — Official documentation used as the source of truth
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — The AI coding assistant this plugin extends
-- [Claude Code Skills](https://docs.anthropic.com/en/docs/claude-code/skills) — Skills framework documentation
+- [Claude Code](https://code.claude.com/docs/en/overview) — The AI coding assistant this plugin extends
+- [Claude Code Skills](https://code.claude.com/docs/en/skills) and [Plugins](https://code.claude.com/docs/en/plugins/install) — Skills and plugin framework documentation
