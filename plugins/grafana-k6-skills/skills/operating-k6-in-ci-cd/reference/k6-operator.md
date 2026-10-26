@@ -4,6 +4,20 @@
 
 The k6-operator is a Kubernetes operator that enables running distributed k6 load tests across multiple pods. It uses a Custom Resource Definition (CRD) called `TestRun` (previously `K6`).
 
+### Operator Version and Runner k6 Version
+
+The operator release decides which k6 runs your script unless you pin `spec.runner.image`:
+
+| k6-operator | Released | Default runner k6 | Notable |
+|-------------|----------|-------------------|---------|
+| v1.7.0 | 2026-10 | v2.3.0 | — |
+| v1.6.0 | 2026-08 | v2.2.0 | `.spec.args` array field |
+| v1.5.0 | 2026-06 | **v2.0.0** (first v2 runner) | `.spec.scuttle` deprecated, `schedulerName` |
+| v1.4.0 | 2026-04 | v1.x | Default metric tags, PrivateLoadZone secrets |
+| v1.3.0 | 2026-03 | v1.6.1 | Option to skip the initializer pod |
+
+Check what you have: `kubectl get deploy -n k6-operator-system k6-operator-controller-manager -o jsonpath='{.spec.template.spec.containers[0].image}'` and `kubectl get testrun <name> -o jsonpath='{.spec.runner.image}'`. Scripts that rely on v1-only behavior (removed flags, `externally-controlled`, extensions built for `go.k6.io/k6` v1) need `runner.image: grafana/k6:v1` on operator v1.5.0+.
+
 ## Installation
 
 ### Using Helm
@@ -109,8 +123,18 @@ spec:
     configMap:
       name: k6-test-script
       file: test.js
-  arguments: --out json=/tmp/results.json
+  # Operator v1.6.0+: args is an array, so values with spaces, quotes, or `$` need no escaping.
+  # When args is present it overrides the older single-string `arguments` field.
+  args:
+    - --out
+    - json=/tmp/results.json
+    - --tag
+    - note=values with spaces "work" here
+    - -e
+    - BASE_URL=$(BASE_URL)        # Kubernetes expands env references
+  # Older operators: arguments: --out json=/tmp/results.json
   runner:
+    image: grafana/k6:2.3.0        # pin the k6 version explicitly
     env:
       - name: BASE_URL
         value: "http://my-service.default.svc.cluster.local:8080"
@@ -133,9 +157,11 @@ spec:
 ```yaml
 spec:
   runner:
-    image: custom-k6-image:latest   # Custom k6 image with extensions
+    image: custom-k6-image:2.3.0   # Custom k6 image with extensions, built with xk6 against go.k6.io/k6/v2
     imagePullPolicy: Always
 ```
+
+With automatic extension resolution the runner can also provision official and community extensions on demand from plain `import 'k6/x/...'` lines, as long as the pods can reach the k6 build service. `v1.x:` community extensions additionally need `K6_ENABLE_COMMUNITY_EXTENSIONS=true` in `runner.env`.
 
 ### With Grafana Cloud k6
 
@@ -154,7 +180,14 @@ spec:
           secretKeyRef:
             name: k6-cloud-secrets
             key: token
+      - name: K6_CLOUD_STACK_ID      # k6 v2 requires a stack for k6 cloud commands; harmless for --out cloud
+        valueFrom:
+          secretKeyRef:
+            name: k6-cloud-secrets
+            key: stack-id
 ```
+
+The operator can also read the token from a secret labeled `k6cloud=token` in its own namespace (`kubectl -n k6-operator-system create secret generic my-cloud-token --from-literal=token=... && kubectl -n k6-operator-system label secret my-cloud-token k6cloud=token`). If a v2 runner logs an authentication error that mentions the stack, add `K6_CLOUD_STACK_ID` as above.
 
 ### With Istio Service Mesh
 
@@ -167,6 +200,8 @@ spec:
       annotations:
         sidecar.istio.io/inject: "true"    # Enable Istio sidecar
 ```
+
+`.spec.scuttle` (the old sidecar-termination helper) is deprecated since operator v1.5.0; follow the operator's Istio documentation for sidecar lifecycle instead of relying on it.
 
 ## Parallelism and Load Distribution
 
@@ -212,3 +247,6 @@ kubectl get testrun -w
 | Connection refused | Check target service DNS and network policies |
 | Uneven load | Use arrival-rate executors for better distribution |
 | OOMKilled | Increase memory limits in runner.resources |
+| `unknown flag`, `--no-summary`, `externally-controlled`, or `K6_ENABLE_COMMUNITY_EXTENSIONS` errors after an operator upgrade | Runner is now k6 v2.x (operator v1.5.0+). Update the script or pin `runner.image: grafana/k6:v1` |
+| Extension import fails to provision on a v2 runner | The extension is built for `go.k6.io/k6` v1 (for example the archived xk6-disruptor). Use `grafana/k6:v1` or a v2-compatible extension |
+| Initializer job fails before any runner starts | Operator v1.5.0+ logs the k6 error from the initializer pod; run the same script locally with `k6 inspect` first |
